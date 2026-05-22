@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+build/
+
+# IDE and tool runtimes
+.antigravitycli/
+.hermes/
+.idea/
+.vscode/
+
+# Logs and system files
+*.log
+.DS_Store
+.env*
