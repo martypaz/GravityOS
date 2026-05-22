@@ -17,10 +17,9 @@ echo -e "Hardware: ${GREEN}NVIDIA GTX 1080 Ti (11GB VRAM) detected${NC}"
 echo -e ""
 
 # 1. Check if node_modules exists
-if [ ! -d "dashboard-ui/node_modules" ]; then
+if [ ! -d "node_modules" ]; then
     echo -e "${YELLOW}[System] First-time setup: Installing dashboard dependencies...${NC}"
-    cd dashboard-ui && npm install
-    cd ..
+    npm install
 fi
 
 # 2. Check if port 3000 is already occupied
@@ -41,4 +40,4 @@ fi
 
 # 3. Launch dev server
 echo -e "${GREEN}[Success] Starting dev server on port 3000...${NC}"
-cd dashboard-ui && npm run dev
+npm run dev

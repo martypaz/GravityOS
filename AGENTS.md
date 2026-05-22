@@ -22,3 +22,10 @@ When building or modifying prompts for AI-generated content, you MUST enforce st
 2. **Banned Buzzwords**: You MUST explicitly forbid the AI from using common, easily detectable AI buzzwords.
    **STRICT BLACKLIST**: *delve, robust, seamless, tapestry, testament, elevate, foster, realm, crucial, vital, unlock, comprehensive, tailored, landscape, enhance, empower, ensure, ultimate, transformative, navigate*.
 3. **Conversational Phrasing**: Maintain humanlike transitions and clear logical structures.
+
+
+<!-- BEGIN:nextjs-agent-rules -->
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
+<!-- END:nextjs-agent-rules -->
