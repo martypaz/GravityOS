@@ -90,7 +90,7 @@ function parseAgents(filePath: string): string[] {
   }
 }
 
-// Scan for project-specific skills
+// Scan for project-specific skills (excluding symlinked/common ones)
 function scanProjectSkills(projectPath: string): string[] {
   const skills: string[] = [];
   const skillDirs = [
@@ -100,8 +100,11 @@ function scanProjectSkills(projectPath: string): string[] {
   ];
 
   for (const dir of skillDirs) {
-    if (fs.existsSync(dir)) {
-      try {
+    try {
+      if (fs.existsSync(dir)) {
+        const stat = fs.lstatSync(dir);
+        if (stat.isSymbolicLink()) continue; // Skip common/central symlinked skills
+
         const files = fs.readdirSync(dir);
         for (const file of files) {
           if (file.endsWith('.md')) {
@@ -110,9 +113,9 @@ function scanProjectSkills(projectPath: string): string[] {
             skills.push(file);
           }
         }
-      } catch (e) {
-        // Ignore errors
       }
+    } catch (e) {
+      // Ignore errors
     }
   }
   return Array.from(new Set(skills));
@@ -185,7 +188,118 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { activeProject, action } = await request.json();
+    const body = await request.json();
+    const { activeProject, action, projectName, projectSpec, projectArchType, techStackDev, techStackProd } = body;
+
+    // Handle project creation & bootstrapping
+    if (action === 'create') {
+      if (!projectName) {
+        return NextResponse.json({ success: false, error: 'Project name is required' }, { status: 400 });
+      }
+
+      const safeProjectName = projectName.replace(/[^a-zA-Z0-9_-]/g, '').trim();
+      if (!safeProjectName) {
+        return NextResponse.json({ success: false, error: 'Invalid project name' }, { status: 400 });
+      }
+
+      const fullPath = path.join(ANTIGRAVITY_ROOT, safeProjectName);
+      if (fs.existsSync(fullPath)) {
+        return NextResponse.json({ success: false, error: `Project folder '${safeProjectName}' already exists` }, { status: 400 });
+      }
+
+      // 1. Create project folder
+      fs.mkdirSync(fullPath, { recursive: true });
+
+      // 2. Generate standard bootstrap folders
+      const hermesDir = path.join(fullPath, '.hermes');
+      const plansDir = path.join(hermesDir, 'plans');
+      const skillsDir = path.join(hermesDir, 'skills');
+
+      fs.mkdirSync(hermesDir, { recursive: true });
+      fs.mkdirSync(plansDir, { recursive: true });
+
+      // Symlink to central/common skills
+      const centralSkillsDir = path.join(os.homedir(), '.ai_skills');
+      if (!fs.existsSync(centralSkillsDir)) {
+        fs.mkdirSync(centralSkillsDir, { recursive: true });
+      }
+
+      try {
+        fs.symlinkSync(centralSkillsDir, skillsDir, 'dir');
+      } catch (symError) {
+        fs.mkdirSync(skillsDir, { recursive: true });
+      }
+
+      // 3. Generate custom AGENTS.md
+      const agentsMdPath = path.join(fullPath, 'AGENTS.md');
+      const customAgentsContent = `# AI Agent Guidelines
+
+This file contains critical project-specific instructions and architecture rules for AI agents touching this codebase.
+
+## Version Control & Source Management
+
+**CRITICAL RULE: DO NOT AUTO-COMMIT CODE TO GIT.**
+1. **Never** run \`git commit\` or \`git push\` without explicit instruction from the user.
+2. Auto-committing triggers CI/CD pipelines which can deploy untested, work-in-progress code.
+3. The user will review and manage all git commits and deployments manually.
+
+## Terminology & Tone
+
+1. **UK English spelling**: Always use UK English spelling (e.g. "colour" instead of "color", "optimise" instead of "optimize") for all UI text and code comments.
+2. Maintain clean, direct, and helpful explanations across all inline documentation.
+
+## AI Prompt Engineering & Content Generation
+
+**CRITICAL RULE: Combating AI Content Detectors**
+When building or modifying prompts for AI-generated content, you MUST enforce strict anti-AI-detector rules:
+1. **High Burstiness & Perplexity**: Instruct the AI to vary sentence lengths dramatically (mixing very short, punchy sentences with longer, complex ones).
+2. **Banned Buzzwords**: You MUST explicitly forbid the AI from using common, easily detectable AI buzzwords.
+   **STRICT BLACKLIST**: *delve, robust, seamless, tapestry, testament, elevate, foster, realm, crucial, vital, unlock, comprehensive, tailored, landscape, enhance, empower, ensure, ultimate, transformative, navigate*.
+3. **Conversational Phrasing**: Maintain humanlike transitions and clear logical structures.
+`;
+      fs.writeFileSync(agentsMdPath, customAgentsContent, 'utf-8');
+
+      // 4. Generate .cursorrules
+      const cursorRulesPath = path.join(fullPath, '.cursorrules');
+      const cursorRulesContent = `{
+  "instruction": "Please read AGENTS.md at the project root for strict guidelines before writing any code. Always use absolute paths for file system queries. Ensure UK spelling standards are met."
+}
+`;
+      fs.writeFileSync(cursorRulesPath, cursorRulesContent, 'utf-8');
+
+      // 5. Generate README.md with project specifications and tech stack
+      const readmePath = path.join(fullPath, 'README.md');
+      const readmeContent = `# ${safeProjectName}
+
+This project was bootstrapped and configured for the Hermes AI environment via GravityOS.
+
+## Web App Architecture Type
+${projectArchType || 'Standalone SPA'}
+
+## Project Specification
+${projectSpec || 'No project specification provided.'}
+
+## Development Tech Stack
+${techStackDev || 'No development tech stack specified.'}
+
+## Production Tech Stack
+${techStackProd || 'No production tech stack specified.'}
+
+## Advisory Guidelines
+Refer to [AGENTS.md](file://${fullPath}/AGENTS.md) for style requirements, agent guidelines, and critical commands restrictions.
+`;
+      fs.writeFileSync(readmePath, readmeContent, 'utf-8');
+
+      // 6. Automatically target this new project as active target
+      fs.writeFileSync(CURRENT_ACTIVE_FILE, JSON.stringify({ activeProject: safeProjectName }, null, 2));
+
+      return NextResponse.json({
+        success: true,
+        message: `Project '${safeProjectName}' successfully created, bootstrapped, and targeted!`,
+        activeProject: safeProjectName
+      });
+    }
+
     if (!activeProject) {
       return NextResponse.json({ success: false, error: 'No active project specified' }, { status: 400 });
     }

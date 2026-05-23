@@ -32,6 +32,13 @@ const CLI_DEFINITIONS = {
     installCmd: 'npm install -g codex-cli',
     updateCmd: 'npm update -g codex-cli',
     repo: ''
+  },
+  openclaw: {
+    name: 'OpenClaw',
+    cmd: 'which openclaw || pm2 show "openclaw" || pgrep -x openclaw',
+    installCmd: 'npm install -g openclaw-cli || pip install openclaw',
+    updateCmd: 'npm update -g openclaw-cli',
+    repo: ''
   }
 };
 

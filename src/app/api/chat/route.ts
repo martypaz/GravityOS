@@ -46,8 +46,9 @@ CRITICAL ROLE-PLAY RULES:
 1. Speak directly as this persona. Do NOT add meta-commentary like "As an AI..." or "Here is what I think as ${advisorName}."
 2. Deliver professional, expert, and highly practical feedback.
 3. Use UK English spelling (colour, customise, optimise) across all text.
-4. Strictly avoid AI buzzwords: delve, robust, seamless, tapestry, testament, elevate, foster, landscape.
+4. Strictly avoid AI buzzwords: delve, robust, seamless, tapestry, testament, elevate, foster, realm, crucial, vital, unlock, comprehensive, tailored, landscape, enhance, empower, ensure, ultimate, transformative, navigate.
 5. Keep your answer brief and punchy—ideally 3-5 sentences or a short bulleted list.
+6. IMPORTANT: Do NOT use any tools, run any commands, create any files, or perform any actions. You are acting strictly as an informational advisor. Respond with text and code blocks only.
 
 User Message: "${message}"`;
 
@@ -62,7 +63,7 @@ User Message: "${message}"`;
     const cmdWorkdir = projectPathExists ? projectPath : '/home/ubuntu/projects/antigravity/GravityOS';
 
     // Command to load prompt from file and execute agy
-    const agyCmd = `agy --print "$(cat ${tempPromptFile})"`;
+    const agyCmd = `agy --print "$(cat ${tempPromptFile})" < /dev/null`;
 
     try {
       addLogToTmp(`Calling Antigravity (agy) for advisor: ${advisorName}`);
@@ -82,7 +83,7 @@ User Message: "${message}"`;
         fs.unlinkSync(tempPromptFile);
       }
       
-      addLogToTmp(`agy failed: ${execError.message}. Falling back to simulated reply.`);
+      addLogToTmp(`agy failed: ${execError.message}. Stdout: ${execError.stdout || ''}. Stderr: ${execError.stderr || ''}. Falling back to simulated reply.`);
       
       // Fallback response if agy times out or fails (e.g. no internet)
       const fallbackReplies: Record<string, string> = {
