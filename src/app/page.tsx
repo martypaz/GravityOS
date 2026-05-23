@@ -57,6 +57,7 @@ interface Advisor {
   type: 'core' | 'custom';
   avatarInitials: string;
   avatarColor: string;
+  projectId?: string;
 }
 
 interface HermesSettingsData {
@@ -146,6 +147,8 @@ export default function Home() {
   const [newAdvisorRole, setNewAdvisorRole] = useState('');
   const [newAdvisorSpecialty, setNewAdvisorSpecialty] = useState('');
   const [newAdvisorMessage, setNewAdvisorMessage] = useState('');
+  const [editingAdvisorId, setEditingAdvisorId] = useState<string | null>(null);
+  const [newAdvisorProjectId, setNewAdvisorProjectId] = useState('');
 
   // Memory Documents visualization state
   interface MemoryDoc {
@@ -548,17 +551,15 @@ export default function Home() {
     addLog(`Switched guidance context to ${advisor.name}.`);
   };
 
-  // Pools for automatic randomized advisor names
-  const FIRST_NAMES = ['Aiden', 'Sophia', 'Dominic', 'Elena', 'Liam', 'Zoe', 'Chloe', 'Victor', 'Amelia', 'Devon', 'Leila', 'Julian', 'Fiona', 'Gavin', 'Nora', 'Zachary', 'Isabella', 'Xavier'];
-  const LAST_NAMES = ['Vance', 'Jenkins', 'Rostova', 'O\'Connor', 'Chen', 'Rodriguez', 'Blackwood', 'Sterling', 'Hargreaves', 'Mercer', 'Hawthorne', 'Sinclair', 'Brooks', 'Donovan', 'Mendoza'];
+  // Pools for automatic randomized advisor names (first names only, with younger nicknames)
+  const FIRST_NAMES = ['Aiden', 'Sophia', 'Dom', 'Elena', 'Liam', 'Zoe', 'Chloe', 'Victor', 'Amelia', 'Devon', 'Leila', 'Julian', 'Fiona', 'Gavin', 'Nora', 'Zach', 'Bella', 'Xavier'];
 
   const handleToggleAddAdvisorForm = () => {
     const nextVal = !showAddAdvisorForm;
     setShowAddAdvisorForm(nextVal);
     if (nextVal) {
       const randFirst = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
-      const randLast = LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)];
-      setNewAdvisorName(`${randFirst} ${randLast}`);
+      setNewAdvisorName(randFirst);
     }
   };
 
@@ -695,44 +696,118 @@ export default function Home() {
     }
   };
 
-  // Create a Custom Advisor
+  // Create or Update a Custom Advisor
   const handleCreateAdvisor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAdvisorName || !newAdvisorRole) return;
 
-    addLog(`Registering new global advisor '${newAdvisorName}'...`);
+    if (editingAdvisorId) {
+      addLog(`Updating advisor '${newAdvisorName}' (ID: ${editingAdvisorId})...`);
+      try {
+        const res = await fetch('/api/advisors', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: editingAdvisorId,
+            name: newAdvisorName,
+            role: newAdvisorRole,
+            specialty: newAdvisorSpecialty,
+            initialMessage: newAdvisorMessage,
+            projectId: newAdvisorProjectId
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setAdvisors(data.advisors);
+          setEditingAdvisorId(null);
+          setNewAdvisorName('');
+          setNewAdvisorRole('');
+          setNewAdvisorSpecialty('');
+          setNewAdvisorMessage('');
+          setNewAdvisorProjectId('');
+          setShowAddAdvisorForm(false);
+          showStatus(`Advisor '${newAdvisorName}' successfully updated!`, 'success');
+          addLog(`Advisor '${newAdvisorName}' successfully updated.`);
+        } else {
+          showStatus(`Failed to update advisor: ${data.error}`, 'error');
+        }
+      } catch (e: any) {
+        showStatus('Error connecting to advisor update pipeline', 'error');
+      }
+    } else {
+      addLog(`Registering new advisor '${newAdvisorName}'...`);
+      try {
+        const res = await fetch('/api/advisors', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: newAdvisorName,
+            role: newAdvisorRole,
+            specialty: newAdvisorSpecialty,
+            initialMessage: newAdvisorMessage,
+            projectId: newAdvisorProjectId
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setAdvisors(data.advisors);
+          setNewAdvisorName('');
+          setNewAdvisorRole('');
+          setNewAdvisorSpecialty('');
+          setNewAdvisorMessage('');
+          setNewAdvisorProjectId('');
+          setShowAddAdvisorForm(false);
+          showStatus(`Advisor '${newAdvisorName}' registered!`, 'success');
+          addLog(`New advisor '${newAdvisorName}' successfully operational.`);
+
+          // Auto-select the newly created advisor
+          const newlyCreated = data.advisors.find((a: Advisor) => a.name === newAdvisorName) || data.advisor;
+          if (newlyCreated) {
+            handleSelectAdvisor(newlyCreated);
+          }
+        } else {
+          showStatus(`Failed to register advisor: ${data.error}`, 'error');
+        }
+      } catch (e: any) {
+        showStatus('Error connecting to advisor registration pipeline', 'error');
+      }
+    }
+  };
+
+  // Start Editing an Advisor
+  const handleStartEditAdvisor = (advisor: Advisor) => {
+    setEditingAdvisorId(advisor.id);
+    setNewAdvisorName(advisor.name);
+    setNewAdvisorRole(advisor.role);
+    setNewAdvisorSpecialty(advisor.specialty);
+    setNewAdvisorMessage(advisor.initialMessage);
+    setNewAdvisorProjectId(advisor.projectId || '');
+    setShowAddAdvisorForm(true);
+    showStatus(`Editing details of '${advisor.name}'...`, 'info');
+  };
+
+  // Delete a Custom Advisor
+  const handleDeleteAdvisor = async (advisorId: string, advisorName: string) => {
+    if (!confirm(`Are you sure you want to delete advisor '${advisorName}'?`)) return;
+
+    addLog(`Removing advisor '${advisorName}'...`);
     try {
-      const res = await fetch('/api/advisors', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newAdvisorName,
-          role: newAdvisorRole,
-          specialty: newAdvisorSpecialty,
-          initialMessage: newAdvisorMessage
-        })
+      const res = await fetch(`/api/advisors?id=${encodeURIComponent(advisorId)}`, {
+        method: 'DELETE'
       });
       const data = await res.json();
       if (data.success) {
         setAdvisors(data.advisors);
-        setNewAdvisorName('');
-        setNewAdvisorRole('');
-        setNewAdvisorSpecialty('');
-        setNewAdvisorMessage('');
-        setShowAddAdvisorForm(false);
-        showStatus(`Advisor '${newAdvisorName}' registered globally!`, 'success');
-        addLog(`New global advisor '${newAdvisorName}' successfully operational.`);
-
-        // Auto-select the newly created advisor
-        const newlyCreated = data.advisors.find((a: Advisor) => a.name === newAdvisorName) || data.advisor;
-        if (newlyCreated) {
-          handleSelectAdvisor(newlyCreated);
+        showStatus(`Advisor '${advisorName}' removed successfully.`, 'success');
+        addLog(`Advisor '${advisorName}' removed.`);
+        if (selectedAdvisorId === advisorId) {
+          setSelectedAdvisorId('marcus'); // Fallback to Marcus
         }
       } else {
-        showStatus(`Failed to register advisor: ${data.error}`, 'error');
+        showStatus(`Failed to remove advisor: ${data.error}`, 'error');
       }
     } catch (e: any) {
-      showStatus('Error connecting to advisor registration pipeline', 'error');
+      showStatus('Error connecting to advisor deletion pipeline', 'error');
     }
   };
 
@@ -1568,8 +1643,22 @@ Please begin the initial advisory discussion, outline our features scope, and de
                     {showAddAdvisorForm && (
                       <form onSubmit={handleCreateAdvisor} className="bg-zinc-950 p-4 rounded-lg border border-zinc-800 space-y-3">
                         <div className="text-xs font-bold text-zinc-400 border-b border-zinc-800 pb-1 flex justify-between items-center">
-                          <span>Add Extra Expert Advisor</span>
-                          <button type="button" onClick={() => setShowAddAdvisorForm(false)} className="text-zinc-600 hover:text-zinc-400 font-bold">×</button>
+                          <span>{editingAdvisorId ? 'Edit Expert Advisor' : 'Add Extra Expert Advisor'}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingAdvisorId(null);
+                              setNewAdvisorName('');
+                              setNewAdvisorRole('');
+                              setNewAdvisorSpecialty('');
+                              setNewAdvisorMessage('');
+                              setNewAdvisorProjectId('');
+                              setShowAddAdvisorForm(false);
+                            }}
+                            className="text-zinc-600 hover:text-zinc-400 font-bold"
+                          >
+                            ×
+                          </button>
                         </div>
                         <div className="space-y-1">
                           <label className="text-[10px] text-zinc-500 font-semibold font-mono">Advisor Name</label>
@@ -1585,7 +1674,7 @@ Please begin the initial advisory discussion, outline our features scope, and de
                             type="text" required value={newAdvisorRole}
                             onChange={e => setNewAdvisorRole(e.target.value)}
                             onBlur={() => handleSuggestSpecialties(newAdvisorRole)}
-                            placeholder="e.g. Print on Demand Advisor (Blur to fetch AI ideas)"
+                            placeholder="e.g. Print on Demand Advisor"
                             className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-white focus:outline-none"
                           />
                         </div>
@@ -1597,30 +1686,87 @@ Please begin the initial advisory discussion, outline our features scope, and de
                             className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-white focus:outline-none"
                           />
                         </div>
-                        <button type="submit" className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 text-xs font-bold rounded text-white font-mono">
-                          Deploy Advisor
-                        </button>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-zinc-500 font-semibold font-mono">Project Scope (Optional)</label>
+                          <input
+                            type="text" value={newAdvisorProjectId} onChange={e => setNewAdvisorProjectId(e.target.value)}
+                            placeholder={`e.g. ${activeProject || 'wicked-prints-2'} (empty for all)`}
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-white focus:outline-none"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button type="submit" className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-xs font-bold rounded text-white font-mono">
+                            {editingAdvisorId ? 'Update Advisor' : 'Deploy Advisor'}
+                          </button>
+                          {editingAdvisorId && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingAdvisorId(null);
+                                setNewAdvisorName('');
+                                setNewAdvisorRole('');
+                                setNewAdvisorSpecialty('');
+                                setNewAdvisorMessage('');
+                                setNewAdvisorProjectId('');
+                                setShowAddAdvisorForm(false);
+                              }}
+                              className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-xs font-bold rounded text-zinc-400 font-mono"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </div>
                       </form>
                     )}
 
                     <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                       {advisors.map((advisor) => (
-                        <button
+                        <div
                           key={advisor.id}
-                          onClick={() => handleSelectAdvisor(advisor)}
-                          className={`flex items-start gap-3 w-full p-3 rounded-lg border text-left transition-all ${selectedAdvisorId === advisor.id
+                          className={`flex items-start justify-between gap-3 w-full p-3 rounded-lg border transition-all ${selectedAdvisorId === advisor.id
                               ? 'bg-emerald-950/20 border-emerald-500 text-white shadow-lg shadow-emerald-500/5'
                               : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-800 hover:border-zinc-700'
                             }`}
                         >
-                          <div className={`w-8 h-8 rounded-full border flex items-center justify-center font-bold text-xs font-mono flex-shrink-0 ${advisor.avatarColor || 'bg-zinc-800 text-zinc-400 border-zinc-700'}`}>
-                            {advisor.avatarInitials}
+                          <button
+                            onClick={() => handleSelectAdvisor(advisor)}
+                            className="flex items-start gap-3 flex-1 text-left min-w-0"
+                          >
+                            <div className={`w-8 h-8 rounded-full border flex items-center justify-center font-bold text-xs font-mono flex-shrink-0 ${advisor.avatarColor || 'bg-zinc-800 text-zinc-400 border-zinc-700'}`}>
+                              {advisor.avatarInitials}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold truncate text-zinc-200 flex items-center gap-1.5">
+                                <span>{advisor.name}</span>
+                                {advisor.projectId && (
+                                  <span className="text-[8px] bg-emerald-950 text-emerald-400 border border-emerald-900/40 px-1 rounded font-mono uppercase flex-shrink-0">
+                                    {advisor.projectId}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-zinc-400 font-mono truncate">{advisor.role}</div>
+                            </div>
+                          </button>
+                          
+                          <div className="flex gap-1.5 mt-0.5 flex-shrink-0">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleStartEditAdvisor(advisor); }}
+                              className="text-zinc-500 hover:text-emerald-400 text-xs font-mono p-1"
+                              title="Edit Advisor"
+                            >
+                              ✎
+                            </button>
+                            {advisor.type === 'custom' && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleDeleteAdvisor(advisor.id, advisor.name); }}
+                                className="text-zinc-500 hover:text-red-400 text-xs font-mono p-1"
+                                title="Delete Advisor"
+                              >
+                                ✕
+                              </button>
+                            )}
                           </div>
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold truncate text-zinc-200">{advisor.name}</div>
-                            <div className="text-[10px] text-zinc-400 font-mono truncate">{advisor.role}</div>
-                          </div>
-                        </button>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -1642,7 +1788,7 @@ Please begin the initial advisory discussion, outline our features scope, and de
                         <div key={idx} className={`flex flex-col ${msg.sender === 'You' ? 'items-end' : 'items-start'}`}>
                           <div className={`p-3 rounded-lg text-sm max-w-lg ${msg.sender === 'You' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-zinc-200 border border-zinc-700'}`}>
                             <div className="text-[10px] opacity-75 mb-1 font-semibold font-mono">{msg.sender}</div>
-                            <p>{msg.text}</p>
+                            <p className="whitespace-pre-wrap">{msg.text}</p>
                           </div>
                           <span className="text-[9px] text-zinc-600 mt-1 font-mono">{msg.time}</span>
                         </div>

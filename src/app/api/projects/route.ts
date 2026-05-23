@@ -290,6 +290,62 @@ Refer to [AGENTS.md](file://${fullPath}/AGENTS.md) for style requirements, agent
 `;
       fs.writeFileSync(readmePath, readmeContent, 'utf-8');
 
+      // 5.5. Generate KICKOFF.md for multi-agent advisory kickoff
+      const kickoffPath = path.join(fullPath, 'KICKOFF.md');
+      const kickoffContent = `# Advisory Kickoff Briefing: ${safeProjectName}
+
+Welcome, advisors. This document serves as the central kickoff briefing and alignment canvas for the project **${safeProjectName}**. Please use this file as your reference context to perform a coordinated, multi-perspective advisory review of the workspace.
+
+---
+
+## 📋 Project Summary & Context
+
+*   **Project Name:** ${safeProjectName}
+*   **Architecture Type:** ${projectArchType || 'Standalone SPA'}
+*   **Primary Goal & Features:**
+    ${projectSpec || 'No project specification provided.'}
+
+---
+
+## 🛠️ Technological Foundation
+
+### Development Stack
+${techStackDev || 'No development tech stack specified.'}
+
+### Production Stack
+${techStackProd || 'No production tech stack specified.'}
+
+---
+
+## 🧭 Multi-Agent Advisory Focus Areas
+
+Each advisor on the board is assigned a critical perspective to evaluate, brainstorm, and critique based on this briefing.
+
+### 💡 Marcus (Ideas Man) — Product, Market & User Experience
+*   **Your Mission:** Evaluate the feature scope. Identify potential UX bottlenecks, feature creep, and missing value propositions.
+*   **Key Questions:** Is the scope realistic for a first release? How can we simplify the user journeys? What are the high-value features we should prioritize?
+
+### 📐 Leo (The Architect) — System Design, Monorepo & Scalability
+*   **Your Mission:** Audit the folder structure, API routing, and monorepo configurations. Enforce strict separation of concerns.
+*   **Key Questions:** How should the Next.js apps be segmented? What is the ideal database schema representation? Are there any scaling bottleneck risks in this tech stack?
+
+### 🎨 Maya (The Designer) — Visual Identity, Usability & Design System
+*   **Your Mission:** Establish global design rules, typography, responsive breakpoints, and custom themes (focused on clean dark mode palettes).
+*   **Key Questions:** What are our HSL color system variables? How do we structure global styles in \`index.css\`? Are our layout segments intuitive and accessible?
+
+### ⚙️ Silas (Systems Integrator) — WSL Scripts, Background Daemons & Services
+*   **Your Mission:** Configure WSL integration scripts, Docker bindings, background daemons, and database syncing.
+*   **Key Questions:** What automated file triggers can we use to keep memory databases in sync? How should background jobs be handled within WSL?
+
+---
+
+## 🚀 How to Kick Off the Review
+To run a coordinated board-room review right now, paste the following prompt into your Hermes CLI:
+
+> *"Please run a coordinated Multi-Agent Review on the current workspace. Spawn Marcus, Leo, and Maya as parallel subagents. Have them read KICKOFF.md and review our project files, providing their respective reports. Synthesise their feedback into a master dashboard report."*
+`;
+      fs.writeFileSync(kickoffPath, kickoffContent, 'utf-8');
+
       // 6. Automatically target this new project as active target
       fs.writeFileSync(CURRENT_ACTIVE_FILE, JSON.stringify({ activeProject: safeProjectName }, null, 2));
 
