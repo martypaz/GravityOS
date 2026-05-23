@@ -163,6 +163,18 @@ function getMemories(namespace: string): MemoryDocument[] {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
+    const all = searchParams.get('all') === 'true';
+
+    if (all) {
+      let memories = DEFAULT_MEMORIES;
+      if (fs.existsSync(MEMORIES_FILE)) {
+        try {
+          memories = JSON.parse(fs.readFileSync(MEMORIES_FILE, 'utf-8'));
+        } catch (e) {}
+      }
+      return NextResponse.json({ success: true, memories });
+    }
+
     const namespace = searchParams.get('namespace') || 'GravityOS';
     const query = searchParams.get('query');
 

@@ -21,6 +21,7 @@ interface MemorySystem {
   installed: boolean;
   type: string;
   details: string;
+  description?: string;
 }
 
 interface Skill {
@@ -102,6 +103,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'clis' | 'skills' | 'memory' | 'costs'>('overview');
   const [clis, setClis] = useState<Record<string, CLI>>({});
   const [memorySystems, setMemorySystems] = useState<Record<string, MemorySystem>>({});
+  const [mcpConfigured, setMcpConfigured] = useState<Record<string, boolean>>({ hermes: false, claude: false, cursor: false, codex: false });
   const [skills, setSkills] = useState<Skill[]>([]);
   const [costs, setCosts] = useState<CostData | null>(null);
 
@@ -149,6 +151,9 @@ export default function Home() {
   const [newAdvisorMessage, setNewAdvisorMessage] = useState('');
   const [editingAdvisorId, setEditingAdvisorId] = useState<string | null>(null);
   const [newAdvisorProjectId, setNewAdvisorProjectId] = useState('');
+  const [showRawMemoryModal, setShowRawMemoryModal] = useState(false);
+  const [rawMemoryData, setRawMemoryData] = useState<Record<string, MemoryDoc[]> | null>(null);
+  const [reloadingData, setReloadingData] = useState(false);
 
   // Memory Documents visualization state
   interface MemoryDoc {
@@ -222,6 +227,7 @@ export default function Home() {
       const sysData = await sysRes.json();
       if (sysData.clis) setClis(sysData.clis);
       if (sysData.memory) setMemorySystems(sysData.memory);
+      if (sysData.mcpConfigured) setMcpConfigured(sysData.mcpConfigured);
 
       // Skills
       const skillsRes = await fetch('/api/skills');
@@ -358,6 +364,7 @@ export default function Home() {
 
   // Switch Active Project
   const handleSelectProject = async (projectName: string) => {
+    setReloadingData(true);
     addLog(`Workspace targeting synced to: ${projectName}...`);
     try {
       const res = await fetch('/api/projects', {
@@ -370,12 +377,29 @@ export default function Home() {
         setActiveProject(projectName);
         showStatus(`Workspace target switched to '${projectName}'!`, 'success');
         addLog(`Active workspace locked to '${projectName}'.`);
-        fetchData();
+        
+        // Reload advisors lists dynamically to fetch project-scoped ones
+        const advisorsRes = await fetch('/api/advisors');
+        const advisorsData = await advisorsRes.json();
+        if (advisorsData.success) {
+          setAdvisors(advisorsData.advisors);
+          // Default selection to Marcus if the old selected advisor is no longer available
+          const oldAvailable = advisorsData.advisors.some((a: any) => a.id === selectedAdvisorId);
+          if (!oldAvailable) {
+            setSelectedAdvisorId('marcus');
+          }
+        }
+
+        await fetchData();
       } else {
         showStatus(`Failed to switch project: ${data.error}`, 'error');
       }
     } catch (e: any) {
       showStatus('Failed to connect to projects API', 'error');
+    } finally {
+      setTimeout(() => {
+        setReloadingData(false);
+      }, 600);
     }
   };
 
@@ -811,6 +835,25 @@ export default function Home() {
     }
   };
 
+  // Open Raw Memory Modal and fetch all data
+  const handleOpenRawMemoryModal = async () => {
+    addLog('Fetching raw MCP Memory Store data...');
+    try {
+      const res = await fetch('/api/memory?all=true');
+      const data = await res.json();
+      if (data.success) {
+        setRawMemoryData(data.memories);
+        setShowRawMemoryModal(true);
+        showStatus('Raw MCP store data loaded!', 'success');
+        addLog('Raw MCP Memory Store data parsed and loaded.');
+      } else {
+        showStatus('Failed to load raw MCP memory', 'error');
+      }
+    } catch (e) {
+      showStatus('Error connecting to MCP memory server', 'error');
+    }
+  };
+
   // Handle CLI or Memory installation/updating
   const handleInstallUpdate = async (type: 'cli' | 'memory', name: string, action: 'install' | 'update') => {
     addLog(`Initiating ${action} for ${name}...`);
@@ -1105,11 +1148,24 @@ Please begin the initial advisory discussion, outline our features scope, and de
     <div className="flex min-h-screen bg-zinc-950 text-zinc-100 font-sans">
       {/* SIDEBAR NAVIGATION */}
       <aside className="w-64 border-r border-zinc-800 bg-zinc-900/50 flex flex-col">
-        <div className="p-6 border-b border-zinc-800">
+        <div className="p-6 border-b border-zinc-800 space-y-3">
           <h1 className="text-xl font-bold tracking-wider text-emerald-500 flex items-center gap-2">
             <Cpu className="w-6 h-6 animate-pulse" /> GRAVITY OS
           </h1>
-          <p className="text-xs text-zinc-500 mt-1 font-mono">ACTIVE: {activeProject}</p>
+          <div className="space-y-1">
+            <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider font-mono block">Workspace Target</label>
+            <select
+              value={activeProject}
+              onChange={(e) => handleSelectProject(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-emerald-500 font-mono capitalize transition-all hover:border-zinc-700 cursor-pointer"
+            >
+              {projects.map((proj) => (
+                <option key={proj.name} value={proj.name}>
+                  {proj.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <nav className="flex-1 p-4 space-y-1">
@@ -2448,7 +2504,7 @@ Please begin the initial advisory discussion, outline our features scope, and de
           {/* TAB 5: MEMORY SYSTEMS */}
           {activeTab === 'memory' && (
             <div className="space-y-8">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 {Object.entries(memorySystems).map(([key, mem]) => (
                   <div key={key} className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 flex flex-col justify-between h-56 space-y-4">
                     <div className="space-y-2">
@@ -2456,11 +2512,11 @@ Please begin the initial advisory discussion, outline our features scope, and de
                         <h4 className="font-bold text-zinc-100">{mem.name}</h4>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${mem.installed ? 'bg-emerald-950/20 border-emerald-500/20 text-emerald-400' : 'bg-rose-950/20 border-rose-500/20 text-rose-400'
                           }`}>
-                          {mem.installed ? 'Deployed' : 'Unavailable'}
+                          {mem.installed ? (key === 'gravityos_memory' ? 'Deployed' : 'SDK Installed') : 'Unavailable'}
                         </span>
                       </div>
                       <p className="text-xs text-zinc-400 font-mono">Connection Standard: <span className="font-mono text-zinc-300 bg-zinc-950 px-1 py-0.5 rounded">{mem.type}</span></p>
-                      <p className="text-xs text-zinc-500 leading-normal">{mem.details}</p>
+                      <p className="text-xs text-zinc-500 leading-normal">{mem.description || mem.details}</p>
                     </div>
 
                     {!mem.installed ? (
@@ -2472,11 +2528,176 @@ Please begin the initial advisory discussion, outline our features scope, and de
                       </button>
                     ) : (
                       <div className="text-xs text-zinc-500 flex items-center gap-1">
-                        <Check className="w-4 h-4 text-emerald-500" /> Active in environment
+                        <Check className="w-4 h-4 text-emerald-500" /> {key === 'gravityos_memory' ? 'Active in environment' : 'SDK package available'}
                       </div>
                     )}
                   </div>
                 ))}
+              </div>
+
+              {/* UNIFIED MCP MEMORY INTEGRATION STATUS */}
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4">
+                <div>
+                  <h3 className="text-base font-semibold flex items-center gap-2">
+                    <ShieldCheck className="w-5 h-5 text-emerald-500" /> Unified Memory Hub Client Integrations
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Verify which AI clients and development environments are successfully connected to our shared MCP memory store:
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {/* Hermes CLI */}
+                  <div className="bg-zinc-950 border border-zinc-800 p-5 rounded-lg flex flex-col justify-between space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-zinc-200">Hermes CLI</h4>
+                        <span className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold border ${
+                          mcpConfigured.hermes 
+                            ? 'bg-emerald-950/20 text-emerald-400 border-emerald-900/40' 
+                            : 'bg-zinc-900 text-zinc-500 border border-zinc-800'
+                        }`}>
+                          {mcpConfigured.hermes ? 'CONNECTED' : 'NOT LINKED'}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-zinc-500 font-mono">Config: ~/.hermes/config.yaml</p>
+                      <div className="bg-zinc-900 p-2 rounded text-[10px] text-zinc-400 font-mono break-all border border-zinc-800 leading-relaxed">
+                        <span className="text-emerald-500 font-bold">Run in WSL:</span><br/>
+                        echo "y" | hermes mcp add gravityos_memory --command "node" --args "/home/ubuntu/projects/antigravity/GravityOS/scripts/mcp-memory-server.js"
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Claude Code */}
+                  <div className="bg-zinc-950 border border-zinc-800 p-5 rounded-lg flex flex-col justify-between space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-zinc-200">Claude Code</h4>
+                        <span className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold border ${
+                          mcpConfigured.claude 
+                            ? 'bg-emerald-950/20 text-emerald-400 border-emerald-900/40' 
+                            : 'bg-zinc-900 text-zinc-500 border border-zinc-800'
+                        }`}>
+                          {mcpConfigured.claude ? 'CONNECTED' : 'NOT LINKED'}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-zinc-500 font-mono">Config: ~/.claude.json</p>
+                      <div className="bg-zinc-900 p-2 rounded text-[10px] text-zinc-400 font-mono break-all border border-zinc-800 leading-relaxed">
+                        <span className="text-emerald-500 font-bold">Run in WSL:</span><br/>
+                        claude mcp add gravityos-memory node /home/ubuntu/projects/antigravity/GravityOS/scripts/mcp-memory-server.js
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Codex CLI */}
+                  <div className="bg-zinc-950 border border-zinc-800 p-5 rounded-lg flex flex-col justify-between space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-zinc-200">Codex CLI</h4>
+                        <span className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold border ${
+                          mcpConfigured.codex 
+                            ? 'bg-emerald-950/20 text-emerald-400 border-emerald-900/40' 
+                            : 'bg-zinc-900 text-zinc-500 border border-zinc-800'
+                        }`}>
+                          {mcpConfigured.codex ? 'CONNECTED' : 'NOT LINKED'}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-zinc-500 font-mono">Config: stdio hook</p>
+                      <div className="bg-zinc-900 p-2 rounded text-[10px] text-zinc-400 font-mono break-all border border-zinc-800 leading-relaxed">
+                        <span className="text-emerald-500 font-bold">Run in WSL:</span><br/>
+                        codex mcp add gravityos-memory -- node /home/ubuntu/projects/antigravity/GravityOS/scripts/mcp-memory-server.js
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Cursor IDE */}
+                  <div className="bg-zinc-950 border border-zinc-800 p-5 rounded-lg flex flex-col justify-between space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-zinc-200">Cursor IDE</h4>
+                        <span className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold border ${
+                          mcpConfigured.cursor 
+                            ? 'bg-emerald-950/20 text-emerald-400 border-emerald-900/40' 
+                            : 'bg-zinc-900 text-zinc-500 border border-zinc-800'
+                        }`}>
+                          {mcpConfigured.cursor ? 'CONNECTED' : 'NOT LINKED'}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-zinc-500 font-mono">Config: globalStorage/state.vscdb</p>
+                      <div className="bg-zinc-900 p-3 rounded text-[10px] text-zinc-400 font-mono border border-zinc-800 space-y-2 leading-normal">
+                        <div>
+                          <span className="text-emerald-500 font-bold">1. If Cursor is in WSL Remote Mode:</span><br/>
+                          Name: <span className="text-zinc-200 font-bold">gravityos-memory</span><br/>
+                          Type: <span className="text-zinc-200 font-bold">command</span><br/>
+                          Command: <span className="text-zinc-200 font-bold">node /home/ubuntu/projects/antigravity/GravityOS/scripts/mcp-memory-server.js</span>
+                        </div>
+                        <div className="border-t border-zinc-800 pt-1">
+                          <span className="text-cyan-500 font-bold">2. If Cursor is in Windows Native Mode:</span><br/>
+                          Name: <span className="text-zinc-200 font-bold">gravityos-memory</span><br/>
+                          Type: <span className="text-zinc-200 font-bold">command</span><br/>
+                          Command: <span className="text-zinc-200 font-bold">wsl -d Ubuntu-24.04 node /home/ubuntu/projects/antigravity/GravityOS/scripts/mcp-memory-server.js</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* VS Code */}
+                  <div className="bg-zinc-950 border border-zinc-800 p-5 rounded-lg flex flex-col justify-between space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-zinc-200">VS Code</h4>
+                        <span className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold border ${
+                          mcpConfigured.vscode 
+                            ? 'bg-emerald-950/20 text-emerald-400 border-emerald-900/40' 
+                            : 'bg-zinc-900 text-zinc-500 border border-zinc-800'
+                        }`}>
+                          {mcpConfigured.vscode ? 'CONNECTED' : 'NOT LINKED'}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-zinc-500 font-mono">Config: globalStorage/state.vscdb</p>
+                      <div className="bg-zinc-900 p-3 rounded text-[10px] text-zinc-400 font-mono border border-zinc-800 space-y-2 leading-normal">
+                        <div>
+                          <span className="text-emerald-500 font-bold">1. If VS Code is in WSL Remote Mode:</span><br/>
+                          Add to settings.json:<br/>
+                          <span className="text-zinc-200 font-semibold">"mcp.servers": &#123; "gravityos-memory": &#123; "command": "node", "args": ["/home/ubuntu/projects/antigravity/GravityOS/scripts/mcp-memory-server.js"] &#125; &#125;</span>
+                        </div>
+                        <div className="border-t border-zinc-800 pt-1">
+                          <span className="text-cyan-500 font-bold">2. If VS Code is in Windows Native Mode:</span><br/>
+                          Add to settings.json:<br/>
+                          <span className="text-zinc-200 font-semibold">"mcp.servers": &#123; "gravityos-memory": &#123; "command": "wsl", "args": ["-d", "Ubuntu-24.04", "node", "/home/ubuntu/projects/antigravity/GravityOS/scripts/mcp-memory-server.js"] &#125; &#125;</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Antigravity IDE */}
+                  <div className="bg-zinc-950 border border-zinc-800 p-5 rounded-lg flex flex-col justify-between space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-zinc-200">Antigravity IDE</h4>
+                        <span className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold border ${
+                          mcpConfigured.antigravity 
+                            ? 'bg-emerald-950/20 text-emerald-400 border-emerald-900/40' 
+                            : 'bg-zinc-900 text-zinc-500 border border-zinc-800'
+                        }`}>
+                          {mcpConfigured.antigravity ? 'CONNECTED' : 'NOT LINKED'}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-zinc-500 font-mono">Config: .active_project.json</p>
+                      <div className="bg-zinc-900 p-3 rounded text-[10px] text-zinc-400 font-mono border border-zinc-800 space-y-2 leading-normal">
+                        <div>
+                          <span className="text-emerald-500 font-bold">Automatic WSL Sync:</span><br/>
+                          Antigravity's client extensions bind natively to your active workspace in <span className="text-zinc-200 font-semibold">.active_project.json</span>. No extra setup is required!
+                        </div>
+                        <div className="border-t border-zinc-800 pt-1">
+                          <span className="text-cyan-500 font-bold">If calling from Windows Host cmd:</span><br/>
+                          To synchronise workspace state manually from your host Windows command line, execute:<br/>
+                          <span className="text-zinc-200 font-semibold">wsl -d Ubuntu-24.04 agy sync --active</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* VECTORS SPATIAL CANVAS VISUALIZER */}
@@ -2486,19 +2707,28 @@ Please begin the initial advisory discussion, outline our features scope, and de
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                       <h3 className="text-base font-semibold flex items-center gap-2">
-                        <Layers className="w-5 h-5 text-emerald-500" /> Latent Vector Spatial Canvas
+                        <Layers className="w-5 h-5 text-emerald-500" /> Latent Vector Spatial Canvas (MCP Server Linked)
                       </h3>
                       <p className="text-xs text-zinc-400 mt-0.5">2D dimensional reduction projection (t-SNE) of namespace: <span className="font-mono text-emerald-400">{activeProject}</span></p>
                     </div>
 
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={memorySearchQuery}
-                        onChange={e => handleQueryMemories(e.target.value)}
-                        placeholder="Search semantic memory..."
-                        className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 w-48 font-mono"
-                      />
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={handleOpenRawMemoryModal}
+                        className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold rounded-lg text-zinc-300 font-mono flex items-center gap-1.5 border border-zinc-700"
+                        title="Browse Raw MCP Memory Database"
+                      >
+                        <BookOpen className="w-3.5 h-3.5 text-emerald-500" /> Browse Raw MCP Store
+                      </button>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={memorySearchQuery}
+                          onChange={e => handleQueryMemories(e.target.value)}
+                          placeholder="Search semantic memory..."
+                          className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 w-48 font-mono"
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -2594,7 +2824,7 @@ Please begin the initial advisory discussion, outline our features scope, and de
 
                 {/* Deep Inspector Panel */}
                 <div className="space-y-6">
-                  <h3 className="text-base font-semibold">Deep Memory Inspector</h3>
+                  <h3 className="text-base font-semibold">Deep Memory Inspector (MCP Store Active)</h3>
 
                   {selectedMemoryNode ? (
                     <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-5">
@@ -3109,6 +3339,105 @@ Please begin the initial advisory discussion, outline our features scope, and de
                   <Send className="w-3.5 h-3.5" /> Start Advisory Discussion
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RAW MCP MEMORY STORE BROWSER MODAL */}
+      {showRawMemoryModal && rawMemoryData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl max-w-4xl w-full h-[80vh] flex flex-col justify-between shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="p-5 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
+              <div>
+                <h3 className="text-base font-bold text-zinc-100 flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-emerald-400" /> Raw MCP Memory Database Browser
+                </h3>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Direct live view of `.ai_memories.json` shared storage file across all project namespaces:
+                </p>
+              </div>
+              <button
+                onClick={() => setShowRawMemoryModal(false)}
+                className="text-zinc-500 hover:text-zinc-300 font-bold text-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="flex-1 p-6 overflow-y-auto space-y-6">
+              {Object.keys(rawMemoryData).length === 0 ? (
+                <div className="text-center text-zinc-500 py-12">
+                  No namespaces or memory documents found.
+                </div>
+              ) : (
+                Object.entries(rawMemoryData).map(([namespace, docs]) => (
+                  <div key={namespace} className="space-y-3">
+                    <div className="flex items-center gap-2 border-b border-zinc-800/80 pb-1">
+                      <span className="text-xs font-bold text-emerald-400 font-mono uppercase tracking-wider">
+                        Workspace Namespace:
+                      </span>
+                      <span className="text-xs bg-emerald-950 text-emerald-400 border border-emerald-900/60 px-2 py-0.5 rounded font-mono font-bold">
+                        {namespace}
+                      </span>
+                      <span className="text-[10px] text-zinc-500 font-mono">
+                        ({docs.length} indexed documents)
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {docs.map((doc) => (
+                        <div key={doc.id} className="bg-zinc-950 border border-zinc-800/60 rounded-lg p-4 flex flex-col justify-between hover:border-zinc-700/60 transition-all space-y-3">
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-start">
+                              <span className="bg-zinc-900 border border-zinc-800 text-zinc-400 text-[8px] px-2 py-0.5 rounded font-mono font-bold uppercase">
+                                {doc.category}
+                              </span>
+                              <span className="text-[9px] text-zinc-600 font-mono">{doc.timestamp}</span>
+                            </div>
+                            <h5 className="font-bold text-zinc-200 text-xs truncate">{doc.title}</h5>
+                            <p className="text-[11px] text-zinc-400 font-mono leading-normal whitespace-pre-wrap line-clamp-4">
+                              {doc.content}
+                            </p>
+                          </div>
+                          
+                          <div className="flex justify-between items-center text-[9px] font-mono text-zinc-500 border-t border-zinc-900 pt-2">
+                            <span>ID: <strong className="text-zinc-400">{doc.id}</strong></span>
+                            <span>Tokens: <strong className="text-zinc-400">{doc.tokens}</strong></span>
+                            <span>Coords: <strong className="text-zinc-400">{doc.x}, {doc.y}</strong></span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-zinc-800 bg-zinc-950/60 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowRawMemoryModal(false)}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold rounded-lg font-mono"
+              >
+                Close Browser
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RELOADING DATA OVERLAY MODAL */}
+      {reloadingData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
+          <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-xl flex flex-col items-center gap-4 shadow-2xl max-w-sm w-full text-center animate-pulse">
+            <RefreshCw className="w-10 h-10 animate-spin text-emerald-500" />
+            <div className="space-y-1">
+              <h4 className="text-zinc-100 font-bold text-sm font-mono uppercase tracking-wider">Reloading Workspace</h4>
+              <p className="text-xs text-zinc-400 font-medium">Re-indexing databases and synchronising memories for namespace '{activeProject}'...</p>
             </div>
           </div>
         </div>
